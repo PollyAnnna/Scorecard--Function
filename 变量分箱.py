@@ -2,7 +2,11 @@
 # coding: utf-8
 
 # In[ ]:
-
+from scipy.special import chdtri
+import math
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # 变量分箱
 
@@ -164,14 +168,14 @@ def assign_bin(x,cutoffpoints):
                 return 'Bin {}'.format(i+1)
             
             
-'''卡方分箱：
+'''卡方分箱：对某一个变量分箱
 1)如果变量的唯一值数目超过100，则先通过split_data等距分箱和assign_group分割点映射将x映射为split对应的value；
   如果变量的唯一值数目没有超过100，则不用做映射
 2）先自底向上的卡方分箱，再检查每箱是否存在badrate=0/1，以及max_bin和min_binpct
 3）返回cutoffpoints：每个分箱区间的最大值listB
 
 '''
-def ChiMerge(df,col,target,max_bin=5,min_binpct=0,special_attribute=[999]):
+def ChiMerge(df,col,target,max_bin=5,p=0.1,min_binpct=0,special_attribute=[],special_cols=[]):
     col_unique = sorted(list(set(df[col]))) # 变量的唯一值并排序
     n = len(col_unique) # 变量唯一值得个数
     if n <=max_bin:
@@ -197,19 +201,24 @@ def ChiMerge(df,col,target,max_bin=5,min_binpct=0,special_attribute=[999]):
         group_interval = [[i] for i in col_map_unique]  # 对col_map_unique中每个值创建list并存储在group_interval中
         
         max_bin_new=max_bin-len(special_attribute)
-        while (len(group_interval)>max_bin_new): # 当group_interval的长度大于max_bin时，执行while循环
+        chiq_limit=chdtri(1, p)
+        chi_min=0 #初始化一个最小卡方值（当p=0.1时，chi2=2.7，所以设0没问题）
+        while (len(group_interval)>max_bin_new) or chi_min < chiq_limit :
+            # 当group_interval的长度大于max_bin时或最小卡方值小于临界值，执行while循环（只要有一个True就执行）
             chi_list=[]
             for i in range(len(group_interval)-1):
                 temp_group = group_interval[i]+group_interval[i+1] # temp_group 为生成的区间,list形式，例如[1,3]
                 chi_df = regroup[regroup['col_map'].isin(temp_group)]
                 chi_value = cal_chi2(chi_df,all_bad_rate) # 计算每一对相邻区间的卡方值
-                chi_list.append(chi_value)
-            best_combined = chi_list.index(min(chi_list)) # 最小的卡方值的索引
-            # 将卡方值最小的一对区间进行合并
+                chi_list.append(chi_value)       
+            # 将卡方值最小的一对区间进行合并   
+            best_combined = chi_list.index(min(chi_list)) # 最小的卡方值的索引           
             group_interval[best_combined] = group_interval[best_combined]+group_interval[best_combined+1]
             # 删除合并前的右区间
             group_interval.remove(group_interval[best_combined+1])
-            # 对合并后每个区间进行排序
+            chi_min = min(chi_list)
+
+           # 对合并后每个区间进行排序
         group_interval = [sorted(i) for i in group_interval]
         # cutoff点为每个区间的最大值
         cutoffpoints = [max(i) for i in group_interval[:-1]]
@@ -276,12 +285,12 @@ def ChiMerge(df,col,target,max_bin=5,min_binpct=0,special_attribute=[999]):
                         cutoffpoints.remove(cutoffpoints[minpct_bin_index-1])
                     else:
                         cutoffpoints.remove(cutoffpoints[minpct_bin_index])
-        if len(special_attribute)>=1:
+        if col in special_cols:
             cutoffpoints.append(col_max)   #存在不参与分箱的值时，切割点要加上该变量下的最大值
         return cutoffpoints #切割点，为每个分箱的最大值端点（存在不参与分箱的值时，切割点要加上该变量下的最大值；反之，最后一个点是最后一箱的最小值）
 
 # 数值型变量的分箱（卡方分箱）
-def binning_num(df,target,col_list,max_bin=None,min_binpct=None,special_attribute=[]):
+def binning_num(df,target,col_list,max_bin=None,p=0.1,min_binpct=None,special_attribute=[],special_cols=[]):
     """
     df:数据集
     target:目标变量的字段名
@@ -302,7 +311,7 @@ def binning_num(df,target,col_list,max_bin=None,min_binpct=None,special_attribut
     bin_df=[]
     iv_value=[]
     for col in col_list:
-        cut = ChiMerge(df,col,target,max_bin=5,min_binpct=0,special_attribute=[])
+        cut = ChiMerge(df,col,target,max_bin=max_bin,p=p,min_binpct=min_binpct,special_attribute=special_attribute,special_cols=special_cols)
         cut.insert(0,ninf)
         cut.append(inf)
         bucket = pd.cut(df[col],cut)
@@ -341,7 +350,7 @@ def binning_num(df,target,col_list,max_bin=None,min_binpct=None,special_attribut
 
 
 # 数值型变量的iv明细表（直接调用的函数）：基于卡方分箱的结果
-def iv_num(df,target,col_list,max_bin=None,min_binpct=None,special_attribute=[]):
+def iv_num(df,target,col_list,max_bin=None,p=0.1,min_binpct=None,special_attribute=[],special_cols=[]):
     """
     df:数据集
     target:目标变量的字段名
@@ -351,7 +360,7 @@ def iv_num(df,target,col_list,max_bin=None,min_binpct=None,special_attribute=[])
     
     return :变量的iv明细表dataframe
     """
-    bin_df,iv_value = binning_num(df,target,col_list,max_bin=max_bin,min_binpct=min_binpct,special_attribute=[])
+    bin_df,iv_value = binning_num(df,target,col_list,max_bin=max_bin,p=p,min_binpct=min_binpct,special_attribute=special_attribute,special_cols=special_cols)
     iv_df = pd.DataFrame({'col':col_list,
                           'iv':iv_value})
     iv_df = iv_df.sort_values('iv',ascending=False)
