@@ -448,14 +448,14 @@ def plot_woe(bin_df,hspace=0.4,wspace=0.4,plt_size=None,plt_num=None,x=None,y=No
     
     return :每个变量的woe变化趋势图
     """
-    plt.figure(figsize=plt_size)
+    fig=plt.figure(figsize=plt_size)
     plt.subplots_adjust(hspace=hspace,wspace=wspace)
     for i,df in zip(range(1,plt_num+1,1),bin_df):
         col_name = df.index.name
         df = df.reset_index()
-        plt.subplot(x,y,i)
+        ax = fig.add_subplot(x,y,i)
         plt.title(col_name)
-        sns.barplot(data=df,x=col_name,y='woe')
+        ax=sns.barplot(data=df,x=col_name,y='woe')
         plt.xlabel('')
         plt.xticks(rotation=30)
     return plt.show()
