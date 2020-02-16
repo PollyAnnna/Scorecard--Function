@@ -51,7 +51,7 @@ def select_rf(df,target,imp_num=None):
 
 
 # 相关性可视化
-def plot_corr(df,col_list,threshold=None,plt_size=None,is_annot=True):
+def plot_corr(df,col_list,threshold=None,plt_size=None,is_annot=True,camp="YlGnBu"):
     """
     df:数据集
     col_list:变量list集合
@@ -61,30 +61,37 @@ def plot_corr(df,col_list,threshold=None,plt_size=None,is_annot=True):
     
     return :相关性热力图
     """
-    corr_df = df.loc[:,col_list].corr()
+    corr_df = df.loc[:,col_list].corr().round(2)
     plt.figure(figsize=plt_size)
-    sns.heatmap(corr_df,annot=is_annot,cmap='rainbow',vmax=1,vmin=-1,mask=np.abs(corr_df)<=threshold)
+    sns.heatmap(corr_df,annot=is_annot,cmap=camp,mask=np.abs(corr_df)<=threshold)
     return plt.show()
 
+# 相关性剔除：
+# 1、计算变量间两两的相关系数
+# 2、当相关系数绝对值大于等于一定阈值时：删除iv值较低的变量
 
-# 相关性剔除
-def forward_delete_corr(df,col_list,threshold=None):
+def forward_delete_corr(df,iv_df,col_list,threshold=None):
     """
     df:数据集
+    iv_df:分箱后得到的各变量iv值的一个dataframe
     col_list:变量list集合
     threshold: 相关性设定的阈值
     
     return:相关性剔除后的变量
+   
     """
-    list_corr = col_list[:]
-    for col in list_corr:
-        corr = df.loc[:,list_corr].corr()[col]
-        corr_index= [x for x in corr.index if x!=col]
-        corr_values  = [x for x in corr.values if x!=1]
-        for i,j in zip(corr_index,corr_values):
+    iv_ser=iv_df.set_index(keys='col',inplace=True) # index为变量名，value为变量iv值的Series
+    for col in col_list:
+        corr = df.loc[:,col_list].corr()[col] # 变量col与其余变量的corr的series（index为变量名，value为corr）
+        col_other= [x for x in corr.index if x!=col] # 除col以外的其余变量list
+        corr_values  = [x for x in corr.values if x!=1] # col与其余变量的corr的list
+        for i,j in zip(col_other,corr_values):
             if abs(j)>=threshold:
-                list_corr.remove(i)
-    return list_corr
+                if min(iv_ser[col],iv_ser[i]) == iv_ser[col] and iv_ser[col] != iv_ser[i]:
+                    col_list.remove(col)
+                else:
+                    col_list.remove(i)
+    return col_list
 
 
 # 相关性变量映射关系 
